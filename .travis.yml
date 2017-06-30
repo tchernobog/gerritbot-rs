@@ -1,4 +1,15 @@
 language: rust
+
+sudo: false
+addons:
+  apt:
+    packages:
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
+      - binutils-dev
+      - libssh2-1-dev
+
 rust:
   - stable
   - beta
@@ -6,6 +17,14 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
-before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install libssh2-1-dev -y
+
+before_script:
+  - cargo install cargo-kcov --force
+  - cargo kcov --print-install-kcov-sh | $SHELL
+
+script:
+  - cargo test --no-run
+  - cargo kcov --all --no-clean-rebuild --coveralls -v
+
+cache:
+  cargo: true
