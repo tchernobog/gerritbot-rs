@@ -1,4 +1,17 @@
+sudo: false
 language: rust
+cache: cargo
+addons:
+  apt:
+    packages:
+      - libcurl4-openssl-dev
+      - libelf-dev
+      - libdw-dev
+      - binutils-dev
+      - cmake
+      - libssh2-1-dev
+    sources:
+      - kalakris-cmake
 rust:
   - stable
   - beta
@@ -6,6 +19,11 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
-before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install libssh2-1-dev -y
+before_script:
+  - export PATH=$HOME/.cargo/bin:$PATH
+  - which cargo-coveralls || cargo install cargo-travis
+script:
+  - cargo build
+  - cargo test
+after_success:
+  - cargo coveralls
