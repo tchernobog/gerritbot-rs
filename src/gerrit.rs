@@ -8,7 +8,7 @@ use ssh2::Channel;
 use serde_json;
 
 use futures::sync::mpsc::{channel, Receiver, Sender};
-use futures::{Future, Sink, Stream};
+use futures::{Future, Sink, Stream, future};
 
 use bot;
 
@@ -274,15 +274,32 @@ pub fn event_stream(
     receiver_into_event_stream(rx)
 }
 
-#[cfg(test)]
-mod test {
-    use super::{get_pub_key_path, PathBuf};
+pub fn gerrit_sink(host: String,
+    username: String,
+    priv_key_path: PathBuf)
+    -> Result<(Sender<String>, Box<Stream<Item=Change, Error=String>>), String> {
 
-    #[test]
-    fn test_get_pub_key_path() {
-        let result = get_pub_key_path(&PathBuf::from("some_priv_key"));
-        assert!(result == PathBuf::from("some_priv_key.pub"));
-    }
+    let (tx, rx) = channel::<String>(1);
+    info!("(Re)connecting to Gerrit over SSH for sending commands: {}", host);
+    let conn = connect_to_gerrit(&host, &username, &priv_key_path)?;
+    info!("Connected commands sink to Gerrit.");
+
+    let response_stream = rx.then(move |change_id: Result<String, ()>| {
+        let ssh_channel = conn.session.channel_session().map_err(|e| {
+            format!("Failed to open new ssh channel: {}", e)
+        });
+
+        if let Ok(ssh_channel) = ssh_channel {
+            let change_id = change_id.expect("receiver never faile");
+            future::result(query(ssh_channel, &change_id).map_err(|e| {
+                format!("Could not parse json: {}", e)
+            }))
+        } else {
+            future::result(Err(String::from("fucked up")))
+        }
+    });
+
+    Ok((tx, Box::new(response_stream)))
 }
 
 pub fn query(mut ssh_channel: Channel, change_id: &str) -> Result<Change, serde_json::Error> {
@@ -301,4 +318,15 @@ pub fn query(mut ssh_channel: Channel, change_id: &str) -> Result<Change, serde_
     debug!("[D] {:?} for json: {}", res, json);
 
     res
+}
+
+#[cfg(test)]
+mod test {
+    use super::{get_pub_key_path, PathBuf};
+
+    #[test]
+    fn test_get_pub_key_path() {
+        let result = get_pub_key_path(&PathBuf::from("some_priv_key"));
+        assert!(result == PathBuf::from("some_priv_key.pub"));
+    }
 }
